@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lesson 0002 — Customer Service Bot with Knowledge Base (RAG 入門)</title>
+<link rel="stylesheet" href="../assets/style.css" />
+</head>
+<body>
+
+<header class="lesson-mission-banner">
+  <strong>Mission:</strong> Dify AI 客服系統 · 1 個月密集 + side project ·
+  Lesson <strong>0002</strong> / ~8 ·
+  <a href="../MISSION.md">mission</a> ·
+  <a href="../RESOURCES.md">resources</a> ·
+  <a href="../reference/GLOSSARY.md">glossary</a>
+</header>
+
+<h1>Lesson 0002<br><small style="font-size:0.55em; color:#666; font-weight:400;">Customer Service Bot with Knowledge Base · RAG 入門</small></h1>
+
+<p class="callout win">
+<span class="label">🎯 這課的 win</span><br>
+90 分鐘後，你會有一個跑在自己 Dify 的「瓦斯客服 Chatflow」——能用台灣天然氣公司真實 FAQ（20 條 Q&A、5 大類）回答用戶問題、分流不相關主題、上線前跑過 Recall Test 驗證 retrieval 準確率。
+</p>
+
+<div class="callout tip">
+<span class="label">為什麼用 Chatflow 不用 Chatbot？</span>
+<p>Lesson 1 的 <code>Hello Dify</code> 是 <strong>Chatbot</strong>（只有 system prompt + LLM）。本課做 <strong>Chatflow</strong>——多 node 串接，<strong>能對問題分流</strong>（瓦斯相關 → 查 KB → LLM 整合回答；無關 → 直接拒絕）。這是 Chatbot 辦不到的，是 real customer service bot 的核心 pattern。</p>
+</div>
+
+<div class="callout warn">
+<span class="label">⚠️ 重要：Recall Test 不跑不要上線</span>
+<p>RAG chatbot 上線前沒跑 Recall Test 等於盲飛。SKILL 永久教訓：「KB 建好的第一件事是到 <strong>Retrieval Testing</strong> 拿幾個真實 query 測試，看到 top chunks 真的是相關 FAQ 才能進下一個 step。」</p>
+</div>
+
+<hr>
+
+<h2>先決條件</h2>
+
+<ul>
+  <li><strong>Lesson 0001 完成：</strong>Docker Dify 跑得起來、provider 設定過、有 Chatbot App</li>
+  <li><strong>Embedding model provider 已加：</strong>Lesson 1 加的「LLM provider」不夠——embedding model 是另一個 setting，這課要再加（見 Step 0）</li>
+  <li><strong>FAQ 檔準備好：</strong>本課用你提供的 <a href="../reference/gas-company-faq.md"><code>reference/gas-company-faq.md</code></a>（20 條 Q&A，5 大類）</li>
+  <li><strong>預估時程：</strong>90 分鐘（含 Recall Test + 4 種測試情境驗證）</li>
+</ul>
+
+<hr>
+
+<h2>Step 0 — 加 Embedding Model Provider</h2>
+
+<div class="callout tip">
+<span class="label">Embedding model 是什麼？</span>
+<p>RAG 把文件切成 chunk，<strong>用 embedding model 把每個 chunk 轉成向量</strong>存起來。使用者問題進來也轉成向量，比較相似度找出最相關的 chunks。Embedding 跟 LLM 是兩個不同 model——Lesson 1 加的「Default Reasoning Model」是 LLM，這課要另外加 Embedding。</p>
+</div>
+
+<p>進 <strong>Settings → Model Provider</strong>，往下捲找 <strong>TEXT EMBEDDING</strong> 區段，挑你準備好的 provider 加：</p>
+
+<h3>路徑 A — Native Cohere Provider（如果 API key 是真 Cohere 或代理）</h3>
+<ol>
+  <li>選 <code>Cohere</code> → 填 API Key → 儲存</li>
+  <li>推薦模型：<code>embed-multilingual-v3</code>（支援繁中，本課 FAQ 是繁中內容）</li>
+  <li>不要選 <code>embed-english</code>——會大幅降準確率</li>
+</ol>
+
+<h3>路徑 B — Custom OpenAI-compatible（你的 MiniMax.io 通常走這條）</h3>
+<div class="callout tip">
+<span class="label">為什麼 MiniMax 走 OpenAI-compatible？</span>
+<p>MiniMax.io 的 <code>https://api.minimax.io</code> 通常 expose OpenAI-compatible REST endpoint（<code>/v1/embeddings</code>）。Dify 的「Custom」provider 允許設定任意 base URL，等於把 MiniMax 的 embedding endpoint 當自家 provider 用。</p>
+</div>
+<ol>
+  <li>選 <code>OpenAI-API-compatible</code>（在 Custom 區段）</li>
+  <li>填 Name：<code>MiniMax</code></li>
+  <li>Base URL：<code>https://api.minimax.io/v1</code></li>
+  <li>API Key：你的 MiniMax token（不需要加 <code>Bearer</code> 前綴，Dify 會自己加）</li>
+  <li>Model name：填 MiniMax 提供的 embedding model（查 MiniMax 文件，常見是 <code>embo-01</code> 之類）</li>
+  <li>儲存</li>
+</ol>
+
+<h3>驗證</h3>
+<p>無論走 A 或 B，回 <strong>Model Provider</strong> 主頁應該看到至少 1 個 provider 同時有 <code>LLM</code> + <code>TEXT EMBEDDING</code> 兩個 label。</p>
+
+<hr>
+
+<h2>Step 1 — 建 Knowledge Base（KB）</h2>
+
+<ol>
+  <li>頂部 menu 點 <strong>Knowledge</strong> → 右上 <strong>Create Knowledge</strong></li>
+  <li>選 source type：<strong>Import from file</strong>（FAQ 是 .md）</li>
+  <li>選你的本機 <code>gas-company-faq.md</code>（從 <a href="../reference/gas-company-faq.md">teach-dify workspace reference/</a> copy 到本機，或者直接從 workspace 拉）</li>
+  <li>KB 名稱填：<code>瓦斯客服 FAQ</code></li>
+  <li>進 <strong>Index Method</strong> 設定頁（下一步處理）</li>
+</ol>
+
+<h2>Step 2 — 設定 KB 處理參數</h2>
+
+<div class="callout tip">
+<span class="label">本課用的設定（已驗證適合 20 條 FAQ）</span>
+<p>官方文件列了一堆選項，新手看一頭霧水。本課設定是針對 20-30 條 Q&A 的最佳實踐——別的設定都先不動。</p>
+</div>
+
+<ul>
+  <li><strong>Chunk Settings</strong>：預設 <strong>Automatic</strong>（依段落自動切）。FAQ 已經是 Q1~Q20 結構化，切出來每 chunk 就是 1 條 Q&A，剛好。</li>
+  <li><strong>Index Method</strong>：選 <strong>High Quality</strong>（會用 embedding model，多花 token 但 KB recall 準確度大幅提升）</li>
+  <li><strong>Embedding Model</strong>：選 Step 0 加的那個（<code>embed-multilingual-v3</code> 或 MiniMax 的 embedding model）</li>
+  <li><strong>Retrieval Settings</strong>：選 <strong>Hybrid Retrieval</strong>（vector + full-text 一起，semantic 70% / keyword 30% 是常見權重）</li>
+</ul>
+
+<p>按 <strong>Save and Process</strong>。Dify 會跑 chunking → embedding → indexing。等 status 變 <code>completed</code>（20 條 FAQ 通常 30-60 秒）。</p>
+
+<hr>
+
+<h2>Step 3 — Recall Test（永久教訓必跑）</h2>
+
+<p>進 KB 詳情頁，左側 menu 點 <strong>Retrieval Testing</strong>。試 3 個 query 看 top chunks 是否正確：</p>
+
+<table>
+<thead><tr><th>Query</th><th>預期 Top-1 Chunk</th></tr></thead>
+<tbody>
+<tr><td><code>瓦斯帳單過期還能去超商繳嗎</code></td><td>Q1 的 A1（提到「7-11、全家、萊爾富、OK」）</td></tr>
+<tr><td><code>微電腦瓦斯表閃紅燈</code></td><td>Q8 的 A8（提到「黑色復歸鈕」）</td></tr>
+<tr><td><code>瓦斯爐火黃紅色</code></td><td>Q15 的 A15（提到「正常是藍色」「爐頭積碳」）</td></tr>
+</tbody>
+</table>
+
+<div class="callout win">
+<span class="label">3 個都對才進下一步</span>
+<p>如果有任何一個 top chunk 是錯的（例如 Q15 查「黃紅色」卻撈到 Q4「基本費」），代表 chunking 或 retrieval 設定要調。常見解法：換 embedding model / 調 hybrid weights（semantic 拉到 80%）/ 把 KB 文件再人工標段落。</p>
+</div>
+
+<hr>
+
+<h2>Step 4 — 建 Chatflow App</h2>
+
+<div class="callout tip">
+<span class="label">為什麼這次是 Chatflow 不是 Chatbot？</span>
+<p>Chatbot 只能「一個 LLM 接 user input」。Customer service 必須分流：瓦斯問題 → 查 KB + LLM 整合；不相關 → 直接拒絕；緊急 → 直接轉真人（Lesson 3 會做）。這需要 <strong>conditional branching</strong>——只有 Chatflow 辦得到。</p>
+</div>
+
+<ol>
+  <li>進 <strong>Studio</strong> → <strong>Create from Blank</strong> → 選 <strong>Chatflow</strong></li>
+  <li>命名：<code>瓦斯客服 Chatflow</code></li>
+  <li>進 canvas。預設已有 <strong>Start</strong> + <strong>Answer</strong> 兩個 node——先刪掉預設的 Answer，重新從頭接</li>
+</ol>
+
+<hr>
+
+<h2>Step 5 — 串接 5 個 Node</h2>
+
+<p>本課最終的 flow 結構（依官方 tutorial）：</p>
+
+<pre><code>[Start]
+   ↓
+[Question Classifier]   ← 用 LLM 對 user 輸入分流
+   ├─ "瓦斯相關問題" → [Knowledge Retrieval] → [LLM] → [Answer]
+   ├─ "不關瓦斯 / 客服指引" → [Answer] (拒絕範本)
+   └─ "緊急情況 / 轉真人" → [Answer] (緊急指引)
+</code></pre>
+
+<h3>5.1 Question Classifier Node</h3>
+
+<ul>
+  <li>從 Question Classifier 加入</li>
+  <li>Input variable：<code>sys.user_query</code>（User Input / 對話輸入）</li>
+  <li>Model：Lesson 1 設的 LLM（用好的 LLM——classifier 對模型品質敏感）</li>
+  <li>設定 3 個分類（Instruction 寫清楚區別）：</li>
+</ul>
+
+<table>
+<thead><tr><th>類別</th><th>Instruction 寫法範本</th></tr></thead>
+<tbody>
+<tr>
+  <td><strong>瓦斯相關問題</strong></td>
+  <td>用戶問任何關於瓦斯帳單、抄表、安全操作、瓦斯表安裝 / 異動、爐火熱水器異常等 <strong>跟台灣天然氣股份有限公司服務相關的問題</strong></td>
+</tr>
+<tr>
+  <td><strong>不關瓦斯</strong></td>
+  <td>用戶問的問題跟瓦斯／天然氣完全無關，或聊天／打招呼 / 跟閒聊無關的主題（天氣、新聞、政治、其他公司產品等）</td>
+</tr>
+<tr>
+  <td><strong>緊急情況 / 轉真人</strong></td>
+  <td>用戶提到漏氣、火警、瓦斯中毒、搶修、瓦斯管線被挖斷等<strong>需要立即人為介入的緊急狀況</strong></td>
+</tr>
+</tbody>
+</table>
+
+<h3>5.2 兩條 Direct Reply 路徑（Answer node）</h3>
+
+<p>拉一個 <strong>Answer</strong> node 接 <strong>不關瓦斯</strong> 分支。內容：</p>
+
+<pre><code>您好，我是瓦斯公司的 AI 客服助手 🤖
+
+我能協助您：
+- 帳單繳費問題
+- 抄表與度數查詢
+- 安全與緊急處理指引
+- 瓦斯表異動 / 過戶申請
+- 爐火 / 熱水器使用異常排除
+
+您問的問題不在我的服務範圍內。若有其他瓦斯相關需求，歡迎詢問！
+</code></pre>
+
+<p>再拉一個 <strong>Answer</strong> node 接 <strong>緊急情況</strong> 分支。內容：</p>
+
+<div class="callout warn"><strong>⚠️ 緊急處置 SOP</strong></div>
+
+<pre><code>⚠️ 您描述的狀況可能涉及漏氣或緊急危險，請立即遵循「禁、關、推、離」：
+
+1. **禁**：不可開關任何電器（避免火花）
+2. **關**：立即關閉瓦斯表前總閥
+3. **推**：輕推窗戶通風
+4. **離**：迅速撤離至室外安全處
+
+📞 並撥打本公司 24 小時緊急搶修專線，或撥打 **119** 求助。
+
+我已將您的訊息標記為【緊急】送出，請等待真人客服優先聯繫您。
+</code></pre>
+
+<h3>5.3 Knowledge Retrieval + LLM（核心）</h3>
+
+<p>從 <strong>瓦斯相關問題</strong> 分支往下：</p>
+
+<ol>
+  <li>加 <strong>Knowledge Retrieval</strong> node
+    <ul>
+      <li>Query variable：<code>sys.user_query</code></li>
+      <li>Knowledge base：選 <code>瓦斯客服 FAQ</code>（Step 1 建的那個）</li>
+    </ul>
+  </li>
+  <li>加 <strong>LLM</strong> node
+    <ul>
+      <li>Model：Lesson 1 設的 LLM</li>
+      <li>Context：<code>Knowledge Retrieval / result</code>（KB 撈到的 chunks）</li>
+      <li>System prompt 寫法：</li>
+    </ul>
+  </li>
+</ol>
+
+<pre><code>你是台灣天然氣股份有限公司的 AI 客服助手。基於以下「已確認的官方 FAQ 內容」回答用戶問題：
+
+【參考內容開始】
+{{context}}
+【參考內容結束】
+
+【用戶問題】
+{{sys.user_query}}
+
+【回答規範】
+- 引用 FAQ 內容時要具體（如提到「瓦斯表復歸」要帶出步驟）
+- 不知道就明確說「建議聯繫客服專線」
+- 不要編造條款或數字（基本費、復歸時間等都要照 FAQ）
+- 用繁體中文、台灣用語（「瓦斯」不要寫「燃氣」）
+</code></pre>
+
+<ol start="3">
+  <li>加最後一個 <strong>Answer</strong> node 接 LLM 輸出</li>
+  <li>Output variable：選 LLM 的 <code>text</code> 輸出</li>
+</ol>
+
+<h2>Step 6 — Publish + WebApp 測試</h2>
+
+<ol>
+  <li>右上 <strong>Publish</strong> → <strong>Publish Update</strong></li>
+  <li>左側 <strong>Studio</strong> → <code>瓦斯客服 Chatflow</code> 卡片點 <strong>Visit WebApp</strong> 或 <strong>Preview</strong></li>
+  <li>逐個測 4 種情境：</li>
+</ol>
+
+<table>
+<thead><tr><th>情境</th><th>測試 query</th><th>預期結果</th></tr></thead>
+<tbody>
+<tr>
+  <td><strong>瓦斯相關</strong></td>
+  <td><code>瓦斯帳單過期還能去超商繳嗎？</code></td>
+  <td>KB 撈到 Q1 → LLM 整合回答，提到「7-11、全家、萊爾富、OK」</td>
+</tr>
+<tr>
+  <td><strong>瓦斯相關（專業術語）</strong></td>
+  <td><code>微電腦瓦斯表跟傳統表有什麼差別？</code></td>
+  <td>KB 撈到 Q7 → 提到「微量漏氣」「超時」「強震 5 級以上」三大防護</td>
+</tr>
+<tr>
+  <td><strong>不相關</strong></td>
+  <td><code>今天台北天氣如何？</code></td>
+  <td>直接走「不關瓦斯」Answer node，禮貌拒絕</td>
+</tr>
+<tr>
+  <td><strong>緊急</strong></td>
+  <td><code>家裡聞到很重的瓦斯味怎麼辦？</code></td>
+  <td>走緊急 Answer，給「禁關推離」SOP + 119</td>
+</tr>
+</tbody>
+</table>
+
+<div class="callout win">
+<span class="label">4 種都對才進下一步</span>
+<p>如果瓦斯相關的查詢有 LLM 自己編造（例如基本費數字寫錯），代表 system prompt 沒強調「不要編造」or KB 撈到的 context 不對。回 Step 3 重新跑 Recall Test 確認。</p>
+</div>
+
+<hr>
+
+<h2>Step 7 — 自我驗證清單</h2>
+
+<p>全部勾完才進 Lesson 3：</p>
+
+<ul class="task-list">
+  <li><input type="checkbox"> Embedding model provider 已加且可驗證（Settings → Model Provider 看到 TEXT EMBEDDING label）</li>
+  <li><input type="checkbox"> KB <code>瓦斯客服 FAQ</code> 已建，20 條 Q&A indexing 完成（status: completed）</li>
+  <li><input type="checkbox"> Recall Test 3 個 query 都撈到正確 top chunk</li>
+  <li><input type="checkbox"> Chatflow <code>瓦斯客服 Chatflow</code> 已建，5 node 串接正確（Classifier → Answer/KB→LLM→Answer）</li>
+  <li><input type="checkbox"> Question Classifier 3 個類別設定（瓦斯相關 / 不相關 / 緊急）</li>
+  <li><input type="checkbox"> Publish 後 WebApp 上跑 4 種 query 都正確分流</li>
+  <li><input type="checkbox"> 同 1 個對話記憶能持續（多輪問答 context 延續）</li>
+  <li><input type="checkbox">（建議）截圖存到 <code>~/.openclaw/workspace/teach-dify/screenshots/0002-customer-service.png</code></li>
+</ul>
+
+<hr>
+
+<h2>What's next — Lesson 3 preview</h2>
+
+<p>Lesson 3 我們要解決一個現實 customer service 的痛點：</p>
+
+<blockquote>
+「AI 答不出來的問題要怎麼轉給真人客服？」
+</blockquote>
+
+<ul>
+  <li>用 <strong>Human Input</strong> node 在 Workflow 中「暫停」、等真人回應</li>
+  <li>把 Step 6 的「緊急」分支從「丟個 SOP 給你」升級成「把這場對話整包轉給值班客服接手」</li>
+  <li>學 Chatflow 的 <strong>pause & resume</strong> 機制（背後是 workflow_runs API）</li>
+</ul>
+
+<p>Lesson 3 前要準備：</p>
+<ul>
+  <li>Dify <strong>帳號 / API access</strong>（後面要 curl API 測 workflow run 狀態）</li>
+  <li>想清楚「真人客服」在你的情境是什麼（線上值班系統？email？LINE OA？）— 影響 Human Input 後接什麼 node</li>
+</ul>
+
+<hr>
+
+<h2>Quiz — 取回長期記憶</h2>
+
+<p>做 retrieval practice，把今天的關鍵字釘在腦海：</p>
+
+<div class="quiz" data-correct="A">
+<p><strong>Q1.</strong> 為什麼 Lesson 2 用 <strong>Chatflow</strong> 不用 Chatbot？</p>
+<ul class="options">
+  <li><button data-answer="A">Chatbot 沒 Question Classifier / If-Else 等 condition branching，無法對問題分流</button></li>
+  <li><button data-answer="B">Chatbot 不能接 Knowledge Base，Chatflow 才行</button></li>
+  <li><button data-answer="C">Chatflow 比 Chatbot 多付的 License 費比較值得</button></li>
+</ul>
+<div class="explanation">Chatbot 也能接 KB（AI 自己決定用不用），但客服需要明確分流：瓦斯相關 → 查 KB；不相關 → 直接拒絕；緊急 → 轉 SOP。這要 Question Classifier——只有 Chatflow/Workflow 才有。RAG 的關鍵不是 KB 本身，是「該不該用 KB」的 conditional 控制。</div>
+<div class="feedback"></div>
+</div>
+
+<div class="quiz" data-correct="B">
+<p><strong>Q2.</strong> KB 建好但上線前沒跑 Recall Test，最可能發生什麼事？</p>
+<ul class="options">
+  <li><button data-answer="A">聊天速度會變慢</button></li>
+  <li><button data-answer="B">用戶問了某個 FAQ 涵蓋的問題，LLM 卻拿到不相關的 context，然後編造回答</button></li>
+  <li><button data-answer="C">KB 會自動清空</button></li>
+</ul>
+<div class="explanation">Recall Test 是 RAG 的「unit test」。沒測就上線 = 盲飛。最常見的失敗：embedding model 跟你的文件語言不匹配、chunk 切錯邊、hybrid weight 偏一邊。永久教訓：KB 建好的第一件事是 Recall Test。</div>
+<div class="feedback"></div>
+</div>
+
+<div class="quiz" data-correct="C">
+<p><strong>Q3.</strong> 「Hybrid Retrieval (semantic 70 / keyword 30)」的意義？</p>
+<ul class="options">
+  <li><button data-answer="A">系統讀 70% 文件 + 30% 對話</button></li>
+  <li><button data-answer="B">把 70% 預算花在 LLM、30% 留 KB</button></li>
+  <li><button data-answer="C">70% 用向量相似度（語意）+ 30% 用 keyword match，找兼顧語意跟精確詞的 chunks</button></li>
+</ul>
+<div class="explanation">Vector retrieval（語意）抓「概念相近」、full-text retrieval（keyword）抓「精確字」. 純 vector 會漏精確技術詞（例如「復歸鈕」），純 keyword 會漏意譯問法。Hybrid 是最佳平衡點。本課 FAQ 有技術詞（復歸鈕 / 微電腦瓦斯表 / 萊爾富）適合偏 vector 70% setup。</div>
+<div class="feedback"></div>
+</div>
+
+<hr>
+
+<footer class="ask-agent">
+<strong>👋 做完 / 卡住 / 想聊？</strong><br>
+✅ 做完：跟我說 <code>done 0002</code>（強烈建議附 4 種 query 的截圖或對話 log）<br>
+🛠 卡住：貼 4 種 query 的「預期 vs 實際」對照 + 卡哪一步，我幫你看 KB retrieval 還是 LLM 整合的問題<br>
+💬 MiniMax API 設定：如果你走 OpenAI-compatible 路徑後 embed 模型名稱不確定，把 MiniMax 文件連結丟給我幫你看<br>
+⚠️ **特別提醒**：LLM 編造基本費數字、復歸時間、SOP 步驟等是這課最常見 bug，system prompt 強調「不知道就說不知道」是關鍵
+</footer>
+
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

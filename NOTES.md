@@ -69,12 +69,22 @@
 
 ## 待辦（更新）
 
-- [ ] 確認 Lesson 1 scope（Self-host Docker + 第一個 Chatbot 是否太淺？）
-  - 主人有 Dify 經驗可能略過 Lesson 1 進 Lesson 2
-  - 或合併 Lesson 1+2：Self-host + 直接做 Customer Service Bot tutorial
-- [ ] 設計 Lesson 0001 HTML（scope 確認後）
-- [ ] 把 Dify concepts glossary 抽出來放 reference/GLOSSARY.md
-- [ ] 確認主人 deployment 偏好（Docker self-host 是預設，需要他 confirm）
+- [x] 設計 Lesson 0001 HTML（已 commit `781106e` + `e62811e`，Lines 1 自架 + 第一個 Chatbot）
+- [x] Self-host Docker（主人已驗證 done 0001）
+- [x] 設計 Lesson 0002 HTML（Customer Service Bot w/ KB）—— 已寫 13.4 KB / ~280 行；待 commit + push
+- [x] 把 Dify concepts glossary 抽出來放 reference/GLOSSARY.md
+- [x] 確認主人 deployment 偏好（Docker self-host 已驗證 done 0001）
+- [x] 取回 Lesson 2 primary source `docs.dify.ai/en/learn/tutorials/customer-service-bot` 內容確認（cached at `/tmp/dify-customer-sop/customer-service-bot.md`）
+- [x] 把 Lesson 1 done 經驗寫進 `learning-records/0001-...md`（已寫）
+- [x] 存主人給的真實 FAQ 檔（`reference/gas-company-faq.md`，20 條 Q&A，5 大類，台灣天然氣）
+- [ ] 寫 `learning-records/0002-...md` 等主人 done 0002 再記錄
+
+### 2026-07-15 21:58 — Lesson 0001 done
+
+- User 回報 `done 0001` + 截圖（Hello Dify Chatbot 在 WebApp 對話正常）
+- 自我評估 6 項 checklist 全 OK：docker compose healthy / admin / provider / chatbot / publish / webapp 對話
+- 截圖額外訊號：User 問「Dify 版本」「升級 Dify」— AI 答「無法讀 host 環境，建議查 docker-compose.yml」「給 4-step Docker upgrade recipe」。顯示：(a) Chatbot 沒 host 環境 access（合理，需後續 Lesson 4-6 解）、(b) AI 對 generic devops 問答還 ok、(c) User 對生產 deployment 流程有興趣
+- Lesson 2 規劃準備：需 User 提供 FAQ 檔 + 選 embedding provider
 
 ## Lesson 1 scope 提案（給主人二選一）
 
