@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lesson 0001 — 本地起 Dify + 第一個 Hello World Chatbot</title>
+<link rel="stylesheet" href="../assets/style.css" />
+</head>
+<body>
+
+<header class="lesson-mission-banner">
+  <strong>Mission:</strong> Dify AI 客服系統 · 1 個月密集 + side project ·
+  Lesson <strong>0001</strong> / ~8 ·
+  <a href="../MISSION.md">mission</a> ·
+  <a href="../RESOURCES.md">resources</a> ·
+  <a href="../reference/GLOSSARY.md">glossary</a>
+</header>
+
+<h1>Lesson 0001<br><small style="font-size:0.55em; color:#666; font-weight:400;">本地起 Dify · 第一個 Hello World Chatbot</small></h1>
+
+<p class="callout win">
+<span class="label">🎯 這課的 win</span><br>
+60-90 分鐘後，你會有一個跑在 <code>http://localhost</code> 的「自己」的 Dify instance + 一個能聊的 <code>Hello Dify</code> Chatbot。可 demo、可繼續推到 Lesson 2。
+</p>
+
+<div class="callout tip">
+<span class="label">為什麼不直接做客服 Chatflow？</span>
+<p>官方 <a href="https://docs.dify.ai/en/learn/tutorials/customer-service-bot">Customer Service Bot</a> 教程對應你的 mission，但它要 Chatflow + 4 個 node + embedding model，一次太多觀念。Lesson 1 先把「我的 Dify instance 起得來 + UI 會動」這條 baseline 確認，Lesson 2 專注 RAG / Question Classifier 等觀念。</p>
+</div>
+
+<h2>先決條件</h2>
+
+<ul>
+  <li><strong>硬體</strong>：CPU ≥ 2 cores · RAM ≥ 4 GiB（macOS Docker Desktop 配 VM 至少 2 vCPU / 8 GiB）</li>
+  <li><strong>Docker</strong>：Engine 19.03+ · <strong>Compose 2.24.0+</strong>（<code>docker compose version</code> 驗證）</li>
+  <li><strong>CLI 工具</strong>：<code>git</code> · <code>curl</code> · <code>jq</code>（macOS: <code>brew install jq</code>）</li>
+  <li><strong>網路</strong>：連 github.com 與 docker pull registry</li>
+  <li><strong>LLM API key</strong>：至少一個（OpenAI / Anthropic / Gemini / Ollama 至少一個）。沒的話可以 Step 1-2 先做，Step 3 再補</li>
+</ul>
+
+<div class="callout warn">
+<span class="label">注意</span>
+<p>首次 <code>docker compose up -d</code> 會 pull 較多 image，視網速 3-10 分鐘。預先跑一次不要在趕時間時做。</p>
+</div>
+
+<hr>
+
+<h2>Step 1 — Clone &amp; 啟動 Dify</h2>
+
+<p>整段步驟 verbatim from <a href="https://docs.dify.ai/en/self-host/deploy/quick-start/docker-compose">Dify 官方 Docker Compose 文件</a>。</p>
+
+<h3>1.1 clone 最新版 source</h3>
+
+<pre><code>git clone --branch "$(curl -s https://api.github.com/repos/langgenius/dify/releases/latest | jq -r .tag_name)" https://github.com/langgenius/dify.git
+</code></pre>
+
+<p>這段會用 <code>jq</code> 從 GitHub API 抓最新 stable release tag，checkout 該 branch。如果本機沒有 <code>jq</code>，要先裝。</p>
+
+<h3>1.2 進 docker 目錄 + 設定 env</h3>
+
+<pre><code>cd dify/docker
+cp .env.example .env
+</code></pre>
+
+<p>所有 Dify config（DB / Redis / port / vector store / provider 開關）都集中在 <code>.env</code>。第一次跑可以先不動，預設值就能起。</p>
+
+<h3>1.3 起動容器</h3>
+
+<pre><code>docker compose up -d
+</code></pre>
+
+<div class="callout tip">
+<span class="label">他會起什麼</span>
+<p>
+<strong>6 core services</strong>: <code>api</code> · <code>api_websocket</code> · <code>worker</code> · <code>worker_beat</code> · <code>web</code> · <code>plugin_daemon</code><br>
+<strong>6 dependent components</strong>: <code>weaviate</code>（向量 DB）· <code>db_postgres</code> · <code>redis</code> · <code>nginx</code> · <code>ssrf_proxy</code> · <code>sandbox</code><br>
+<strong>1 one-shot</strong>: <code>init_permissions</code>（跑完會 <code>Exited</code>，是正常的）
+</p>
+</div>
+
+<h3>1.4 驗證容器都健康</h3>
+
+<pre><code>docker compose ps
+</code></pre>
+
+<p>應該看到所有容器 <code>Up</code> 或 <code>healthy</code>（<code>init_permissions</code> 是 <code>Exited 0</code>）。如果有容器一直 <code>Restarting</code>，看 Step 1.5。</p>
+
+<div class="callout warn" id="troubleshooting">
+<span class="label">🛠 卡住時常見原因</span>
+<p>
+<ul>
+  <li><strong>port 衝突</strong>（80 / 443 / 5432 / 6379 / 8080 等）→ 停掉佔 port 的東西，或改 <code>.env</code> 內 port 設定（NGINX_PORT、POSTGRES_PORT 等）</li>
+  <li><strong>RAM 不夠</strong> → <code>docker stats</code> 看，Dify 全跑約要 3 GiB</li>
+  <li><strong>Docker Compose 舊版</strong> → <code>docker compose version</code> 要 ≥ 2.24.0</li>
+  <li><strong>舊版 container 衝突</strong> → <code>docker compose down</code> 然後重 <code>up -d</code></li>
+</ul>
+</p>
+<p>其他細節見 <a href="https://docs.dify.ai/en/self-host/deploy/troubleshooting/common-issues">Common Issues</a> 或貼 log 問我。</p>
+</div>
+
+<hr>
+
+<h2>Step 2 — 初始化 admin 帳號</h2>
+
+<p>第一次訪問 <code>http://localhost/install</code> 設定 admin：</p>
+
+<ul>
+  <li><strong>Email</strong>: admin@yourcompany.com（這是登入帳號）</li>
+  <li><strong>密碼</strong>: 自己設（建議馬上存到密碼管理器）</li>
+  <li><strong>Workspace name</strong>: 填你的公司或專案名（之後還能改）</li>
+</ul>
+
+<p>完成後會自動導到 <code>http://localhost</code>。用剛設的 admin 帳號登入。第一次登入通常會引導你進 <strong>Studio</strong>——這是建 app 的地方（但 Lesson 1 我們手動走一遍）。</p>
+
+<hr>
+
+<h2>Step 3 — 加 Model Provider</h2>
+
+<p>Dify 需要 LLM 才能回應。預設沒附任何 provider，要自己加。</p>
+
+<ol>
+  <li>左側 menu 點 <strong>Settings</strong> → <strong>Model Provider</strong></li>
+  <li>選你要的 provider（推薦 <strong>OpenAI</strong>，最通用）</li>
+  <li>填 API key，按下儲存</li>
+  <li>回到 Model Provider 頁，點右上 <strong>Default Models</strong>，把 <strong>System Reasoning Model</strong> 設成你選的模型（<code>gpt-4o-mini</code> 便宜又快，<code>gpt-4o</code> 比較準但貴）</li>
+</ol>
+
+<div class="callout tip">
+<span class="label">還沒有 OpenAI key？</span>
+<p>先加 <code>OpenAI</code> provider 並隨便填個 API key 是可以儲存的——只是實際發訊息會 fail。或者改用 <strong>Anthropic</strong> / <strong>Google Gemini</strong> / <strong>Ollama</strong>（本地 LLM，不需 API key 但要本機跑得起 model）。</p>
+<p>不管怎樣，Step 3 完成前不要進 Step 4——沒 model Chatbot 跑不起來。</p>
+</div>
+
+<hr>
+
+<h2>Step 4 — 建第一個 Chatbot</h2>
+
+<ol>
+  <li>頂部 menu 點 <strong>Studio</strong></li>
+  <li>右上 <strong>Create from Blank</strong> → 選 <strong>Chatbot</strong>（<em>不是</em> Chatflow。Lesson 1 我們從最簡單的開始）</li>
+  <li>命名 <code>Hello Dify</code>，icon 可選 → 按下 <strong>Create</strong></li>
+  <li>你會進到 prompt engineering 介面</li>
+</ol>
+
+<p>把下面的 system prompt 貼進「Instructions」欄位：</p>
+
+<blockquote>
+<p><strong>你是 Dify 的教學助手。</strong>你的任務是用簡短中文回答 Dify 初學者的問題。</p>
+<ul>
+  <li>回答不超過 3 行</li>
+  <li>不確定就說「我不確定，建議查官方文件」</li>
+  <li>不回答跟 Dify / LLM 無關的問題</li>
+</ul>
+</blockquote>
+
+<p>右側「<strong>調試與預覽</strong>」面板可以直接打字試 LLM 怎麼回。例如輸入：</p>
+<ul>
+  <li><code>你好</code> → 應該回友善的招呼</li>
+  <li><code>Dify 是什麼？</code> → 應該回 Dify 簡介</li>
+  <li><code>今天台北天氣？</code> → 應該禮貌拒絕（不在範圍）</li>
+</ul>
+
+<hr>
+
+<h2>Step 5 — Publish + 在 WebApp 測</h2>
+
+<ol>
+  <li>Studio 右上按 <strong>Publish</strong> → <strong>Publish Update</strong></li>
+  <li>發佈後，左邊「Monitoring」 menu 點進去 → 看到 <code>Hello Dify</code> 列在「Apps in use」旁邊有個 <strong>Visit WebApp</strong> 連結（或在 Studio 卡片右上角）</li>
+  <li>點進去，打字「你好」或「Hello」，看 LLM 回應</li>
+</ol>
+
+<div class="callout win">
+<span class="label">✅ Win 達成</span>
+<p>如果你看到 LLM 用友善中文回應你「你好！」之類的——<strong>Lesson 1 的 win 達成了</strong>。截圖存到 <code>~/.openclaw/workspace/teach-dify/screenshots/</code>（沒這個資料夾自己 mkdir）。</p>
+</div>
+
+<hr>
+
+<h2>Step 6 — 自我驗證清單</h2>
+
+<p>全部勾完才進 Lesson 2：</p>
+
+<ul class="task-list">
+  <li><input type="checkbox"> <code>docker compose ps</code> 所有容器都 Up 或 healthy（除了 init_permissions 是 Exited 0）</li>
+  <li><input type="checkbox"> <code>http://localhost/install</code> 成功設了 admin</li>
+  <li><input type="checkbox"> <code>http://localhost</code> 能登入 admin</li>
+  <li><input type="checkbox"> Model Provider 已加 + System Reasoning Model 已設</li>
+  <li><input type="checkbox"> <code>Hello Dify</code> Chatbot 已建立 + 進 prompt engineering</li>
+  <li><input type="checkbox"> Publish 成功 + WebApp 上能跟 LLM 對話（至少一個來回）</li>
+  <li><input type="checkbox">（建議）截圖存到 <code>~/.openclaw/workspace/teach-dify/screenshots/0001-hello.png</code></li>
+</ul>
+
+<hr>
+
+<h2>What's next — Lesson 2 preview</h2>
+
+<p>Lesson 2 我們直接跑官方「<a href="https://docs.dify.ai/en/learn/tutorials/customer-service-bot">Customer Service Bot with Knowledge Base</a>」tutorial：</p>
+
+<ul>
+  <li>建 Knowledge Base（用你自家公司的 FAQ .md / .txt）</li>
+  <li>用 <strong>Chatflow</strong>（不是 Chatbot）+ <strong>Question Classifier</strong> + <strong>Answer</strong> + <strong>Knowledge Retrieval</strong> + <strong>LLM</strong> 5 個 node 串接</li>
+  <li>做一個「能讀自家文件、答問題、判斷不相關問題」的 Chatflow</li>
+</ul>
+
+<p>Lesson 2 前要準備：</p>
+<ul>
+  <li><strong>自家 FAQ</strong>：.md 或 .txt 檔，10-30 條 Q&amp;A 即可（10 條以內太簡單測不出 retrieval，太長 split 會比較累）</li>
+  <li><strong>Embedding model provider</strong>：OpenAI 或 Cohere（self-host 預設要自己加，跟 Lesson 1 Step 3 加 provider 類似）</li>
+</ul>
+
+<hr>
+
+<h2>Quiz — 取回長期記憶</h2>
+
+<p>做 retrieval practice，把今天的關鍵字釘在腦海。答完先不要看解釋，自己想一下再看：</p>
+
+<div class="quiz" data-correct="A">
+<p><strong>Q1.</strong> Dify self-host Docker Compose 預設起多少個 container？分幾類？</p>
+<ul class="options">
+  <li><button data-answer="A">12 個：6 個核心 + 6 個相依</button></li>
+  <li><button data-answer="B">12 個：8 個核心 + 4 個相依</button></li>
+  <li><button data-answer="C">12 個：4 個核心 + 8 個相依</button></li>
+</ul>
+<div class="explanation">6 core = api / api_websocket / worker / worker_beat / web / plugin_daemon。6 deps = weaviate / postgres / redis / nginx / ssrf_proxy / sandbox。另外有個 one-shot init_permissions（Exited 是正常的）。</div>
+<div class="feedback"></div>
+</div>
+
+<div class="quiz" data-correct="B">
+<p><strong>Q2.</strong> 第一次跑 Dify 設 admin 帳號的 URL 是？</p>
+<ul class="options">
+  <li><button data-answer="A">http://localhost/setup</button></li>
+  <li><button data-answer="B">http://localhost/install</button></li>
+  <li><button data-answer="C">http://localhost/admin</button></li>
+</ul>
+<div class="explanation">是 /install，不是 /setup 或 /admin。設完後主入口是 /（登入用）。</div>
+<div class="feedback"></div>
+</div>
+
+<div class="quiz" data-correct="C">
+<p><strong>Q3.</strong> Lesson 2 我們要從 Chatbot 升級到 Chatflow，原因是？</p>
+<ul class="options">
+  <li><button data-answer="A">Chatbot 不能接 Knowledge Base</button></li>
+  <li><button data-answer="B">Chatbot 沒有 Model Provider 設定</button></li>
+  <li><button data-answer="C">Chatbot 沒有 Question Classifier 等多 node 控制 KB 用不用</button></li>
+</ul>
+<div class="explanation">Chatbot 也可以接 KB（AI 自己決定用不用），但客服需要明確分流（問題相關 → 走 KB；不相關 → 直接拒絕）。這要 Question Classifier 或 If-Else node——只有 Chatflow / Workflow 才有。</div>
+<div class="feedback"></div>
+</div>
+
+<hr>
+
+<footer class="ask-agent">
+<strong>👋 做完 / 卡住 / 想聊？</strong><br>
+✅ 做完：跟我說 <code>done 0001</code>，並貼 WebApp 截圖（可選）<br>
+🛠 卡住：貼 <code>docker compose ps</code> 結果 + error log + 卡哪一步，我幫你看<br>
+💬 任何問題：「為什麼這步要這樣？」「可以換 Anthropic 嗎？」「Lesson 2 想加 / 拿掉什麼？」我會即時調
+</footer>
+
+<script src="../assets/quiz.js"></script>
+</body>
+</html>
