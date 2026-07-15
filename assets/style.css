@@ -1,0 +1,221 @@
+/* Tufte-inspired shared stylesheet for Dify teach-dify lessons
+   Designed for clean reading + printing. Lessons link this once at top. */
+
+/* ---------- Reset & base ---------- */
+* { box-sizing: border-box; }
+html { font-size: 16px; }
+body {
+  font-family: "ETBembo", "Palatino Linotype", "Palatino", Georgia, serif;
+  line-height: 1.6;
+  color: #111;
+  background: #fffff8;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 6rem;
+  counter-reset: footnote;
+}
+
+/* ---------- Headings ---------- */
+h1, h2, h3, h4 {
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 1.6rem 0 0.8rem;
+  letter-spacing: -0.01em;
+}
+h1 {
+  font-size: 2.2rem;
+  margin-top: 0;
+  letter-spacing: -0.02em;
+}
+h2 {
+  font-size: 1.55rem;
+  margin-top: 2.5rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid #ccc;
+}
+h3 { font-size: 1.25rem; margin-top: 1.6rem; }
+h4 {
+  font-size: 1.05rem;
+  font-style: italic;
+  font-weight: 400;
+  margin-top: 1.2rem;
+  color: #333;
+}
+
+/* ---------- Paragraphs ---------- */
+p { margin: 0.8rem 0; }
+
+/* ---------- Links ---------- */
+a {
+  color: #185a83;
+  text-decoration: none;
+  border-bottom: 1px dotted #185a83;
+}
+a:hover { border-bottom-style: solid; }
+
+/* ---------- Inline code ---------- */
+code {
+  font-family: "Consolas", "SF Mono", "Menlo", "DejaVu Sans Mono", monospace;
+  font-size: 0.92em;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.08em 0.3em;
+  border-radius: 2px;
+}
+
+/* ---------- Code blocks ---------- */
+pre {
+  background: #f4f4ed;
+  border-left: 3px solid #999;
+  padding: 0.85rem 1.05rem;
+  font-family: "Consolas", "SF Mono", "Menlo", "DejaVu Sans Mono", monospace;
+  font-size: 0.9em;
+  line-height: 1.45;
+  overflow-x: auto;
+  border-radius: 0 4px 4px 0;
+  margin: 1rem 0;
+}
+pre code { background: none; padding: 0; font-size: inherit; }
+
+/* ---------- Lists ---------- */
+ul, ol { padding-left: 1.6rem; margin: 0.8rem 0; }
+li { margin: 0.35rem 0; }
+ul.task-list { list-style: none; padding-left: 1rem; }
+ul.task-list li input { margin-right: 0.5rem; }
+
+/* ---------- Blockquotes ---------- */
+blockquote {
+  margin: 1.2rem 0;
+  padding: 0.4rem 1.2rem;
+  border-left: 3px solid #ccc;
+  color: #555;
+  font-style: italic;
+}
+blockquote p { margin: 0.4rem 0; }
+
+/* ---------- Tables ---------- */
+table {
+  border-collapse: collapse;
+  margin: 1.2rem 0;
+  width: 100%;
+  font-size: 0.95em;
+}
+th, td {
+  padding: 0.55rem 0.8rem;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+  vertical-align: top;
+}
+th { border-bottom: 2px solid #444; font-weight: 600; }
+
+/* ---------- Callouts ---------- */
+.callout {
+  margin: 1.2rem 0;
+  padding: 0.8rem 1rem;
+  border-left: 4px solid;
+  border-radius: 0 4px 4px 0;
+  background: rgba(0, 0, 0, 0.025);
+}
+.callout .label {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.78em;
+  letter-spacing: 0.06em;
+}
+.callout.win  { border-color: #2a8b3f; }
+.callout.warn { border-color: #c97400; }
+.callout.fail { border-color: #c0392b; }
+.callout.tip  { border-color: #185a83; }
+.callout p { margin: 0.4rem 0; }
+
+/* ---------- Mission banner (top of every lesson) ---------- */
+.lesson-mission-banner {
+  margin: -1rem 0 2rem;
+  padding: 0.8rem 1.1rem;
+  background: #f0f0e6;
+  border-radius: 4px;
+  font-size: 0.92em;
+  color: #555;
+}
+.lesson-mission-banner strong { color: #222; }
+
+/* ---------- Quiz widget ---------- */
+.quiz {
+  margin: 1.2rem 0;
+  padding: 1rem 1.1rem;
+  background: #f7f7f1;
+  border: 1px solid #d6d6cc;
+  border-radius: 4px;
+}
+.quiz p:first-child { margin-top: 0; }
+.quiz ol.options {
+  list-style: none;
+  padding-left: 0;
+  margin: 0.6rem 0;
+}
+.quiz ol.options li {
+  margin: 0.4rem 0;
+  padding: 0;
+}
+.quiz button {
+  display: inline-block;
+  margin: 0.3rem 0.4rem 0.3rem 0;
+  padding: 0.45rem 0.9rem;
+  background: #fff;
+  border: 1px solid #999;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 0.95em;
+  font-family: inherit;
+}
+.quiz button:hover { background: #fef9ec; border-color: #666; }
+.quiz button.correct { background: #dff5d6; border-color: #2a8b3f; }
+.quiz button.wrong   { background: #ffd9d3; border-color: #c0392b; }
+.quiz .feedback {
+  margin-top: 0.7rem;
+  font-weight: 600;
+  display: none;
+}
+.quiz .feedback.show { display: block; }
+
+/* ---------- Sidenotes / margin notes ---------- */
+.sidenote {
+  float: right;
+  clear: right;
+  margin-right: -9rem;
+  width: 7.5rem;
+  font-size: 0.82em;
+  font-style: italic;
+  color: #555;
+  background: rgba(255, 255, 200, 0.35);
+  padding: 0.3rem 0.55rem;
+  border-radius: 3px;
+  line-height: 1.4;
+}
+
+/* ---------- HR ---------- */
+hr {
+  border: 0;
+  border-top: 1px solid #ccc;
+  margin: 2rem 0;
+}
+
+/* ---------- Footer / ask-the-agent ---------- */
+footer.ask-agent {
+  margin-top: 3rem;
+  padding: 1rem 1.2rem;
+  background: #fef9ec;
+  border-left: 4px solid #d49a00;
+  border-radius: 0 4px 4px 0;
+  font-size: 0.95em;
+}
+footer.ask-agent strong { color: #6b4d00; }
+footer.ask-agent code { background: rgba(0, 0, 0, 0.07); }
+
+/* ---------- Print friendly ---------- */
+@media print {
+  body { background: white; max-width: 100%; padding: 1rem; }
+  .no-print, footer.ask-agent { display: none; }
+  pre { break-inside: avoid; page-break-inside: avoid; }
+  h2 { page-break-before: auto; }
+  a { border-bottom: none; color: #333; }
+}
