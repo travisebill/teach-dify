@@ -52,6 +52,19 @@
 └── learning-records/                      # 空
 ```
 
+### 2026-07-28 00:00 — Session 恢復 Protocol 建立（Lesson 0003 done 之後）
+
+- **事件**：User 在 23:52 提醒「session 中斷、我之前讓你用 teach skill 教 Dify」—— 我上一輪用 generic 「陪你跑 SOP」接住 lesson 03 request，被教訓
+- **根因**：stateful mission 不能靠 session 記憶，要靠「觸發關鍵字 → 自動撈 mission context」protocol
+- **已補三層恢復機制**：
+  1. **Ryo AGENTS.md**（永久）加「🔁 Stateful Mission 恢復 Protocol」section —— 新 session 看到 Dify / teach-dify / done 000X 等關鍵字第一步就是撈 mission
+  2. **teach-dify/MISSION.md**（永久）開頭加「⚡ Session Recovery」—— 未來 session 第一次讀 mission 就看到恢復 SOP
+  3. **teach-dify/NOTES.md**（這份）加 Ryo 端工作筆記
+- **Lesson 標準回報格式**：完成 = `done 000X` + 截圖 + 對話 log；卡住 = 預期 vs 實際對照 + 卡哪一步
+- **Lesson 0003 狀態**：已 publish 到 GitHub Pages（commit `fdc54f9`），Email SMTP 是最常見卡點
+
+---
+
 ## Lesson roadmap（待主人確認 Lesson 1 scope）
 
 | # | 主題 | 時間 | 主用資源 |

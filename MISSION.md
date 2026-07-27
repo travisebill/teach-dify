@@ -3,6 +3,21 @@
 > Stateful teaching mission. Update with care — confirm with user before changing scope.
 > Captured 2026-07-15 12:57 (Asia/Taipei) by Ryo ⚙️🐱
 
+## ⚡ Session Recovery（給新 session 的 Ryo 看）
+
+如果你是被 user 提到 `teach-dify` / `lesson 000X` / `done 000X` 才進來的新 session：
+
+1. **你正在讀這份 MISSION.md** —— mission = **單租戶 AI 客服 + 多租戶 SaaS**（不是 generic Dify 教學）
+2. 讀 `learning-records/` 找最新狀態（編號最大 = 當前進度）
+3. 讀最新 `lessons/000N-*.html` 知道當前 win + 先決條件
+4. **不要**用 generic「陪你跑 SOP / 你想讓我幫忙設計架構」接住 user — 會被主人教訓
+
+**Lesson 回報標準格式**：`done 000X` + 截圖 / 對話 log；卡住貼「預期 vs 實際」對照。
+
+詳細 protocol 在 `~/.openclaw/workspace/agents/ryo/AGENTS.md` 的「🔁 Stateful Mission 恢復 Protocol」section。
+
+---
+
 ## 🎯 Why（為什麼想學）
 
 - 你想做 **AI 客服系統**——把 Dify 當核心 LLM app 平台
