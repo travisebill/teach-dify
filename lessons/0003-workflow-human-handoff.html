@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lesson 0003 — Workflow + 人類 handoff（Human Input 轉真人客服）</title>
+<link rel="stylesheet" href="../assets/style.css" />
+</head>
+<body>
+
+<header class="lesson-mission-banner">
+<strong>Mission:</strong> Dify AI 客服系統 · 1 個月密集 + side project ·
+Lesson <strong>0003</strong> / ~8 ·
+<a href="../MISSION.md">mission</a> ·
+<a href="../RESOURCES.md">resources</a> ·
+<a href="../reference/GLOSSARY.md">glossary</a>
+</header>
+
+<h1>Lesson 0003<br><small style="font-size:0.55em; color:#666; font-weight:400;">Workflow + 人類 handoff · Human Input 轉真人客服</small></h1>
+
+<p class="callout win">
+<span class="label">🎯 這課的 win</span><br>
+90 分鐘後，你的「瓦斯客服 Chatflow」會從「緊急情況丟 SOP」升級成「整包對話暫停、寄 Email 給值班客服、值班人員在 form 標記接手後 AI 自動回覆客戶」。你會親眼看到 Chatflow <strong>真的 pause + resume</strong>（不是 call LLM 一次就結束）。
+</p>
+
+<div class="callout tip">
+<span class="label">為什麼 Lesson 3 不直接做 Agent / Tool / API？</span>
+<p>你的 mission 是「<strong>多租戶 SaaS AI 客服</strong>」。「客服」的本質是 <strong>human-in-the-loop</strong>：AI 能答 80%，剩下 20% 必須能轉真人。沒學 Human Input 之前做 Agent / Tool / API = 蓋空中樓閣。Lesson 3 是「客服系統的脊椎」，Lesson 4-6 才長四肢。</p>
+</div>
+
+<div class="callout warn">
+<span class="label">⚠️ Lesson 2 的「緊急分支」其實不算客服</span>
+<p>你 Lesson 2 做的「緊急 Answer node」只是「丟個 SOP 給客戶自己看」——<strong>沒有任何真人會接到這個 case</strong>。生產環境的客戶打電話來是因為「真的需要人來」，純丟 SOP 是「逃跑」不是「客服」。Lesson 3 修這個洞。</p>
+</div>
+
+<hr>
+
+<h2>先決條件</h2>
+
+<ul>
+  <li><strong>Lesson 0002 完成：</strong>「瓦斯客服 Chatflow」5 node 跑得起來、4 種 query 都分流正確</li>
+  <li><strong>Dify 帳號還活著：</strong>能進 <code>http://localhost</code> admin / Studio</li>
+  <li><strong>Email delivery 設定想好：</strong>本課用 <strong>Email</strong> delivery（不需要真人客服有 Dify 帳號），你只要想好「值班客服的 email 是誰」</li>
+  <li><strong>（建議）準備一支可寄 SMTP 的 Email：</strong>self-host Dify 預設 SMTP 沒設，會寄不出去；先用 <strong>resend.com / SendGrid / Gmail SMTP</strong> 任一個，或進 Settings → Email 確認能寄測試信</li>
+  <li><strong>（Step 5 需要）</strong>你的 Dify app <strong>API key</strong>（Studio → 你的 App → API Access）</li>
+  <li><strong>預估時程：</strong>90 分鐘（含 Email 設定 + form preview 驗證 + curl SSE 預習）</li>
+</ul>
+
+<div class="callout tip">
+<span class="label">Email SMTP 還沒設定？快速 recipe（Resend 為例）</span>
+<p>進 <strong>Settings → Email</strong> → 選 Resend 或 SMTP。Resend 免費 100/天、SMTP host = <code>smtp.resend.com</code>、port 587、user = <code>resend</code>、password = 你的 Resend API key。存檔後按 <strong>Send Test Email</strong> 確認能收到——沒確認就不要進 Step 2，否則 Step 4 會卡「人根本沒收到信」。</p>
+</div>
+
+<hr>
+
+<h2>Step 1 — 打開 Lesson 2 的 Chatflow</h2>
+
+<ol>
+  <li>進 <strong>Studio</strong> → 點「瓦斯客服 Chatflow」→ <strong>Edit</strong></li>
+  <li>你會看到 Lesson 2 的 5 node：Start → Question Classifier → 3 個 Answer 分支（瓦斯相關 → KB → LLM → Answer / 不相關 → Answer / <strong>緊急 → Answer</strong>）</li>
+  <li>在 <strong>緊急 → Answer</strong> 那條線上，把 Answer node 標記「待刪」——我們要用 Human Input 取代它</li>
+  <li>（不要真的刪，先拉 Human Input 進來再刪，避免中途連線壞掉）</li>
+</ol>
+
+<h3>1.1 確認 Start 跟 Question Classifier 設定還在</h3>
+<p>打開 Question Classifier，確認 3 個類別 instruction 還在（Lesson 2 設的「瓦斯相關 / 不相關 / 緊急」）。沒掉就別動。</p>
+
+<hr>
+
+<h2>Step 2 — 加 Human Input Node</h2>
+
+<p>從 node palette 拉 <strong>Human Input</strong> 進 canvas，拖到「緊急」分支下方。把 Question Classifier 的「緊急」出口接到這個新 node。</p>
+
+<h3>2.1 Delivery Method — 選 <strong>Email</strong></h3>
+
+<div class="callout tip">
+<span class="label">為什麼選 Email 不用 WebApp？</span>
+<p>WebApp delivery 是「對話窗直接彈 form」——<strong>只對「正在跟你對話的客戶」有用</strong>。但「真人客服」通常不在 WebApp 前。Dify 預設 WebApp form 還有一條限制：triggered workflow 不可用（你的 Chatflow 是 conversational 所以 OK，但 Email 更泛用）。Email 寄到值班客服的信箱，客服在任何地方點開就能接手。</p>
+</div>
+
+<ul>
+  <li><strong>Delivery method</strong>：選 <code>Email</code></li>
+  <li><strong>Recipients</strong>：填值班客服 email，例如 <code>oncall@your-gas-company.tw</code>（多人用逗號分）</li>
+  <li>Email subject 預設會帶 workflow 變數，本課用預設即可</li>
+</ul>
+
+<h3>2.2 Form Content — Markdown + 動態變數</h3>
+
+<p>Form 內容寫 Markdown，把對話 context 帶給真人客服：</p>
+
+<pre><code># ⚠️ 緊急瓦斯客服 case
+
+客戶訊息：
+&gt; {{sys.user_query}}
+
+對話時間：{{sys.timestamp}}
+
+請值班客服接手後填寫下方欄位，並按下對應按鈕。
+</code></pre>
+
+<div class="callout tip">
+<span class="label">為什麼 form 裡要把 user_query 跟 timestamp 帶進來？</span>
+<p>真人客服收到信打開 form，<strong>必須馬上知道客戶說了什麼、什麼時候說的</strong>。這兩個是 Human Input form 內建可引用的 sys variables。Workflow 變數用 <code>{{var}}</code> 直接 render 在 form Markdown 裡——不需要先接 Answer 或 Output node（這是 Human Input 跟其他 node 最大的差別）。</p>
+</div>
+
+<h3>2.3 Form Fields — 兩個欄位</h3>
+
+<table>
+<thead><tr><th>欄位名</th><th>型別</th><th>為什麼</th></tr></thead>
+<tbody>
+<tr>
+  <td><code>handling_status</code></td>
+  <td><strong>Select</strong>（必填）</td>
+  <td>值班客服的回報選項：<code>已聯繫客戶</code> / <code>預約到場</code> / <code>已派工</code> / <code>已排除</code></td>
+</tr>
+<tr>
+  <td><code>handling_note</code></td>
+  <td><strong>Paragraph</strong>（選填）</td>
+  <td>備註，例：「客戶在台北市信義區 OO 路，10 分鐘後聯繫」「預約明早 9 點到場」</td>
+</tr>
+</tbody>
+</table>
+
+<div class="callout warn">
+<span class="label">⚠️ Select 必填 / Paragraph 選填</span>
+<p>Dify 規則：<strong>Select / File / File List 是必填</strong>（form 按鈕會 disable 直到填），Paragraph 選填。不要把 <code>handling_status</code> 改成 Paragraph——客戶按送出後下游 If-Else 沒值會 crash。</p>
+</div>
+
+<h3>2.4 User Action — 兩個按鈕</h3>
+
+<table>
+<thead><tr><th>按鈕標題</th><th>Action ID</th><th>下游接到哪</th><th>style</th></tr></thead>
+<tbody>
+<tr>
+  <td><strong>已接手</strong></td>
+  <td><code>handled</code></td>
+  <td>Answer node（回覆客戶）</td>
+  <td><code>primary</code></td>
+</tr>
+<tr>
+  <td><strong>無法處理</strong></td>
+  <td><code>unhandled</code></td>
+  <td>LLM node（AI fallback 回覆）</td>
+  <td><code>default</code></td>
+</tr>
+</tbody>
+</table>
+
+<div class="callout tip">
+<span class="label">Action ID 命名原則</span>
+<p>Dify 會把 action ID 跟 title 分別 expose 給下游：<code>__action_id</code>（機器讀，例 <code>handled</code>）+ <code>__action_value</code>（人讀，例 <code>已接手</code>）。下游 If-Else 條件寫用 <code>__action_id</code>（永遠英文、stable）——別用 <code>__action_value</code>，改 title 就壞。</p>
+</div>
+
+<h3>2.5 Timeout Strategy — 縮短為 30 分鐘</h3>
+
+<ul>
+  <li><strong>Expiration</strong>：<code>30 minutes</code>（不要 default 3 days——緊急 case 等 3 天出事上新聞）</li>
+  <li><strong>Timeout branch</strong>：<strong>必須接</strong>一個 Answer node（內容：「目前客服繁忙、請撥 119」），不然 timeout 後 workflow 直接結束客戶沒收到任何回覆</li>
+</ul>
+
+<hr>
+
+<h2>Step 3 — 串好分支</h2>
+
+<p>最終的 flow 結構（這次擴充 Step 5 的「緊急」分支）：</p>
+
+<pre><code>[Start]
+   ↓
+[Question Classifier]
+   ├─ "瓦斯相關問題" → [Knowledge Retrieval] → [LLM] → [Answer]
+   ├─ "不關瓦斯"     → [Answer (拒絕範本)]
+   └─ "緊急"         → [Human Input (Email)]
+                          ├─ "已接手"     → [Answer (回覆客戶)]
+                          ├─ "無法處理"   → [LLM (fallback)] → [Answer]
+                          └─ timeout 30m  → [Answer (119)]
+</code></pre>
+
+<h3>3.1 「已接手」分支 Answer node</h3>
+
+<p>直接接一個 Answer node，內容：</p>
+
+<pre><code>已收到 ✅
+
+我們的值班客服已接手您的 case，並會盡快與您聯繫。
+
+如有任何變化（瓦斯味加劇、出現頭暈），請立即撥 **119** 或本公司 24 小時搶修專線。
+
+📋 您的處理編號：#{{human_input.handling_status}}-{{sys.conversation_id}}
+</code></pre>
+
+<h3>3.2 「無法處理」分支 LLM + Answer</h3>
+
+<p>LLM node 設 fallback 答覆，system prompt：</p>
+
+<pre><code>你是瓦斯公司 AI 客服。值班客服剛剛標記「無法處理」這個緊急 case。
+請給客戶一個禮貌的 fallback 回覆，引導他們撥打真人專線或 119。
+
+客服備註：{{human_input.handling_note}}
+
+【限制】
+- 不要假裝有人會來接手
+- 必須明確給出真人專線號碼 + 119
+- 不要編造預計到場時間
+</code></pre>
+
+<p>下游接一個 Answer node 引用 LLM 的 <code>text</code>。</p>
+
+<h3>3.3 Timeout branch Answer node</h3>
+
+<p>簡短緊急 fallback：</p>
+
+<pre><code>我們已收到您的緊急通報，但目前值班客服較繁忙，無法立即回應。
+
+請您立即採取以下任一行動：
+1. 撥打 **119** 求助
+2. 撥打本公司 24 小時搶修專線：<您的專線>
+3. 遵循「禁、關、推、離」SOP（不可開電器、關總閥、通風、撤離）
+
+我們會再嘗試聯繫您。
+</code></pre>
+
+<hr>
+
+<h2>Step 4 — Publish + WebApp 測試</h2>
+
+<ol>
+  <li>右上 <strong>Publish</strong> → <strong>Publish Update</strong></li>
+  <li>左側 <strong>Studio</strong> → 「瓦斯客服 Chatflow」點 <strong>Preview</strong></li>
+  <li>輸入 query：<code>家裡聞到很重的瓦斯味怎麼辦？</code></li>
+  <li>預期：
+    <ul>
+      <li>Question Classifier 把它分到「緊急」</li>
+      <li>Human Input node <strong>把 form link 寄到值班客服 email</strong>（這就是為什麼 Step 0 要先驗證 SMTP）</li>
+      <li>WebApp 顯示「客服正在處理、請稍候」（不會立刻回 SOP——這跟 Lesson 2 不同）</li>
+    </ul>
+  </li>
+  <li>到 Email 信箱點 form link → 填欄位 → 按「已接手」或「無法處理」</li>
+  <li>回到 WebApp 看 AI 自動回覆</li>
+</ol>
+
+<h3>4.1 驗證清單（WebApp 端）</h3>
+
+<table>
+<thead><tr><th>情境</th><th>測試 query</th><th>預期結果</th></tr></thead>
+<tbody>
+<tr>
+  <td>緊急 + 真人已接手</td>
+  <td><code>廚房有瓦斯味</code></td>
+  <td>Email 寄出 → 真人按「已接手」→ WebApp 顯示「值班客服已接手」+ 處理編號</td>
+</tr>
+<tr>
+  <td>緊急 + 真人無法處理</td>
+  <td><code>懷疑瓦斯中毒怎麼辦</code></td>
+  <td>Email 寄出 → 真人按「無法處理」+ 填備註 → WebApp 顯示 AI fallback（提到 119）</td>
+</tr>
+<tr>
+  <td>瓦斯相關（複習 Lesson 2）</td>
+  <td><code>瓦斯帳單過期還能去超商繳嗎</code></td>
+  <td>走 KB + LLM，正常回答（Lesson 2 flow 不變）</td>
+</tr>
+<tr>
+  <td>不相關（複習 Lesson 2）</td>
+  <td><code>今天台北天氣如何</code></td>
+  <td>走拒絕範本（Lesson 2 flow 不變）</td>
+</tr>
+</tbody>
+</table>
+
+<div class="callout tip">
+<span class="label">Email 沒收到？先查這 3 個地方</span>
+<p>1. <strong>Dify 後台 Logs</strong>（右上鈴鐺 → Logs → 看 workflow run 是否跑到 Human Input）；2. <strong>SMTP 設定</strong>（Settings → Email → Send Test Email 確認能寄）；3. <strong>Spam folder</strong>（resend / Gmail 很容易進 spam）。三者皆查過仍沒信，看 <code>docker compose logs worker</code> 找 SMTP 錯誤。</p>
+</div>
+
+<hr>
+
+<h2>Step 5 — curl API 預習：看 workflow 真的 pause</h2>
+
+<div class="callout tip">
+<span class="label">這一步是 Lesson 6（後端整合）的暖身</span>
+<p>Lesson 6 會用 FastAPI 把 Dify 包進自家後端。本步先讓你「親眼看到」Chatflow 真的是 pause + resume，不是 call LLM 一次就回完。這是你身為 backend engineer 的視角——Dify API 是 long-running 的，<strong>前端必須能 handle 5 秒以上的 pause</strong>。Lesson 6 會展開細節。</p>
+</div>
+
+<h3>5.1 準備 API key 跟 app ID</h3>
+<ul>
+  <li>Studio → 瓦斯客服 Chatflow → 右上 <strong>API Access</strong> → 複製 <strong>API Key</strong></li>
+  <li>App ID 在 URL（<code>/app/&lt;APP_ID&gt;/workflow</code>）</li>
+</ul>
+
+<h3>5.2 curl SSE stream 看 pause event</h3>
+
+<pre><code>curl -N -X POST "http://localhost/v1/chat-messages" \
+  -H "Authorization: Bearer &lt;YOUR_API_KEY&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "inputs": {},
+    "query": "我家瓦斯味很重",
+    "user": "ryo-test-user",
+    "response_mode": "streaming"
+  }'
+</code></pre>
+
+<p>看 SSE stream 輸出，預期會看到：</p>
+
+<ul>
+  <li><code>event: workflow_started</code></li>
+  <li><code>event: node_started</code>（Question Classifier 開始）</li>
+  <li><code>event: node_finished</code>（Classifier 結束，分到「緊急」）</li>
+  <li><code>event: node_started</code>（Human Input 開始）</li>
+  <li><code>event: human_input_required</code>（<strong>workflow pause 在這裡</strong>，帶 <code>form_token</code>）</li>
+</ul>
+
+<p>複製 <code>form_token</code>，下一步用。</p>
+
+<h3>5.3 手動 submit form 模擬「值班客服按已接手」</h3>
+
+<pre><code>curl -X POST "http://localhost/v1/form/human_input/&lt;form_token&gt;" \
+  -H "Authorization: Bearer &lt;YOUR_API_KEY&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "inputs": {
+      "handling_status": "已聯繫客戶",
+      "handling_note": "10 分鐘後會 call 客戶"
+    },
+    "action": "handled",
+    "user": "ryo-test-user"
+  }'
+</code></pre>
+
+<p>回 <code>{}</code> 表示成功。SSE stream（如果你還在連）會繼續 emit 後續 node event。</p>
+
+<div class="callout tip">
+<span class="label">想看完整 API 文件？</span>
+<p>官方的 <a href="https://docs.dify.ai/en/api-reference/guides/human-input-flow.md">Human Input API Integration Flow</a> 把 5 步展開（Run Workflow → Get Form → Upload File → Submit Form → Resume Stream）。本課只跑 Step 1 + Step 4，Step 6 會把 5 步都實作進 FastAPI。</p>
+</div>
+
+<hr>
+
+<h2>Step 6 — 自我驗證清單</h2>
+
+<p>全部勾完才進 Lesson 4：</p>
+
+<ul class="task-list">
+  <li><input type="checkbox"> Email SMTP 已驗證能寄（Settings → Email → Send Test Email 成功）</li>
+  <li><input type="checkbox"> Human Input node 已加，Delivery = Email + Recipients 填好</li>
+  <li><input type="checkbox"> Form Markdown 帶 <code>sys.user_query</code> 跟 <code>sys.timestamp</code></li>
+  <li><input type="checkbox"> Form fields：<code>handling_status</code> (Select 必填) + <code>handling_note</code> (Paragraph 選填)</li>
+  <li><input type="checkbox"> User actions：<code>handled</code> (primary) + <code>unhandled</code> (default)</li>
+  <li><input type="checkbox"> Timeout = 30 minutes + Timeout branch 已接 Answer node</li>
+  <li><input type="checkbox"> Publish 後 WebApp 跑「瓦斯味」query → Email 收到 form link</li>
+  <li><input type="checkbox"> 值班客服點 form link → 填欄位 → 按「已接手」→ WebApp 收到回覆</li>
+  <li><input type="checkbox"> 值班客服按「無法處理」→ 走 LLM fallback → WebApp 收到 AI 回覆</li>
+  <li><input type="checkbox"> Timeout 30 分鐘沒人接 → WebApp 收到「119 / 搶修專線」</li>
+  <li><input type="checkbox"> curl <code>/chat-messages</code> SSE stream 看得到 <code>human_input_required</code> event + <code>form_token</code></li>
+  <li><input type="checkbox"> curl submit form 模擬「已接手」成功（回 <code>{}</code>）</li>
+  <li><input type="checkbox">（建議）截圖 form 預覽存到 <code>~/.openclaw/workspace/teach-dify/screenshots/0003-human-input-form.png</code></li>
+</ul>
+
+<hr>
+
+<h2>What's next — Lesson 4 preview</h2>
+
+<p>Lesson 3 你學會「AI 答不出來 → 轉真人」。Lesson 4 我們反過來：「<strong>真人需要查系統</strong>」——例如值班客服接手後要查客戶的「最近 3 期帳單」或「該地址的管線維護紀錄」。</p>
+
+<ul>
+  <li>用 <strong>HTTP Request node</strong> 在 workflow 中 call 你的後台 API（FastAPI / 內部系統）</li>
+  <li>用 <strong>Parameter Extractor</strong> 把客戶自然語言「客戶編號 882712」抽出成結構化欄位</li>
+  <li>把查到的「最近帳單」插進 LLM context，讓 AI 整合真人客服回覆 + 帳單資料</li>
+</ul>
+
+<p>Lesson 4 前要準備：</p>
+<ul>
+  <li>想好「真人客服會查什麼資料」——從你的客服 SOP / 既有 CRM 找 3 個常見查詢</li>
+  <li>（選配）寫一支 mock FastAPI endpoint 回假資料，方便 Step 4 測</li>
+</ul>
+
+<hr>
+
+<h2>Quiz — 取回長期記憶</h2>
+
+<div class="quiz" data-correct="B">
+<p><strong>Q1.</strong> Human Input node 跟 Answer node 最大的差別是什麼？</p>
+<ul class="options">
+  <li><button data-answer="A">Human Input 只能用在 Workflow 不能用在 Chatflow</button></li>
+  <li><button data-answer="B">Human Input 會 pause workflow 等真人填表，Answer 只是把文字丟給使用者</button></li>
+  <li><button data-answer="C">Human Input 比較貴所以要付費</button></li>
+</ul>
+<div class="explanation">Human Input 跟 Answer 表面看都「輸出文字」，但 Human Input 會把 workflow <strong>pause</strong> 住，等真人表單送出後才 resume。背後是 workflow_runs API 的 long-running 機制（form_token / human_input_required event）。Lesson 6 會展開這個設計。</div>
+<div class="feedback"></div>
+</div>
+
+<div class="quiz" data-correct="C">
+<p><strong>Q2.</strong> 緊急客服 case 為什麼 timeout 不能用 Dify 預設的 3 days？</p>
+<ul class="options">
+  <li><button data-answer="A">因為 3 days 太貴，Dify 會收費</button></li>
+  <li><button data-answer="B">因為 3 days 後 SMTP 會過期</button></li>
+  <li><button data-answer="C">因為緊急 case 等 3 天沒人接 = 客戶可能出事，timeout 必須反映業務 SLA</button></li>
+</ul>
+<div class="explanation">Default 3 days 適合「內部審稿」「審批流程」這類可以等的 case。緊急客服的 SLA 是「分鐘級」，30 分鐘 timeout + 接 Answer fallback 是合理的設計。Timeout 不是技術限制，是業務承諾。</div>
+<div class="feedback"></div>
+</div>
+
+<div class="quiz" data-correct="A">
+<p><strong>Q3.</strong> 下游 If-Else 條件應該用 <code>__action_id</code> 還是 <code>__action_value</code>？</p>
+<ul class="options">
+  <li><button data-answer="A"><code>__action_id</code>（機器讀、英文、stable）</button></li>
+  <li><button data-answer="B"><code>__action_value</code>（人讀、中文、display title）</button></li>
+  <li><button data-answer="C">兩個都可以，看心情</button></li>
+</ul>
+<div class="explanation"><code>__action_id</code> 是機器讀的 stable identifier（例 <code>handled</code>），改 button title 不會影響下游邏輯。<code>__action_value</code> 是 display 給人看的（例「已接手」），改 title 下游就壞。Rule of thumb：<strong>所有 if/else condition 都用 id</strong>。</div>
+<div class="feedback"></div>
+</div>
+
+<hr>
+
+<footer class="ask-agent">
+<strong>👋 做完 / 卡住 / 想聊？</strong><br>
+✅ 做完：跟我說 <code>done 0003</code>（強烈建議附 Email form 截圖 + SSE stream log）<br>
+🛠 卡住：貼「預期 vs 實際」對照 + 卡哪一步（SMTP / Email 沒收到 / Human Input node 找不到 / SSE 沒看到 event），我幫你拆<br>
+💬 Email SMTP 設定：如果你要走 Resend / Gmail / 公司 SMTP，貼你的 provider 我幫你看設定<br>
+⚠️ <strong>特別提醒</strong>：SMTP 沒驗證就進 Step 2 是這課最常見 bug——進 Step 4 才發現 Email 沒寄出去，浪費 30 分鐘
+</footer>
+
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

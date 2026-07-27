@@ -77,7 +77,9 @@
 - [x] 取回 Lesson 2 primary source `docs.dify.ai/en/learn/tutorials/customer-service-bot` 內容確認（cached at `/tmp/dify-customer-sop/customer-service-bot.md`）
 - [x] 把 Lesson 1 done 經驗寫進 `learning-records/0001-...md`（已寫）
 - [x] 存主人給的真實 FAQ 檔（`reference/gas-company-faq.md`，20 條 Q&A，5 大類，台灣天然氣）
-- [ ] 寫 `learning-records/0002-...md` 等主人 done 0002 再記錄
+- [x] 寫 `learning-records/0002-...md` 等主人 done 0002 再記錄（已寫）
+- [x] 設計 Lesson 0003 HTML（Workflow + Human Input 轉真人客服）—— 已寫 15.4 KB / ~280 行；待 commit + push
+- [x] 更新 index.html 把 0003 改成「✅ 公開」
 
 ### 2026-07-15 21:58 — Lesson 0001 done
 
